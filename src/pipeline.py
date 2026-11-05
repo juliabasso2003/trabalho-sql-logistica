@@ -92,4 +92,6 @@ dist = (
 )
 
 print('\n=== DISTRIBUIÇÃO prazo x real ===')
-print(dist.to_string(index=False))
+print(pd.read_sql(q_dist, con).to_string(index=False))
+ 
+con.close()
