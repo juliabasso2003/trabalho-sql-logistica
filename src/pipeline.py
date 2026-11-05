@@ -1,7 +1,6 @@
 import pandas as pd
-import sqlite3 as sql
 
-df = pd.read_csv(r'C:\Users\Júlia Agazzi\trabalho-sql-logistica\data\DataCoSupplyChainDataset.csv', encoding='latin1')
+CAMINHO = r'C:\Users\Júlia Agazzi\trabalho-sql-logistica\data\DataCoSupplyChainDataset.csv'
 
 colunas = [
     'Shipping Mode',
@@ -10,7 +9,7 @@ colunas = [
     'Days for shipping (real)',
     'Days for shipment (scheduled)',
 ]
-df = pd.read_csv(r'C:\Users\Júlia Agazzi\trabalho-sql-logistica\data\DataCoSupplyChainDataset.csv', encoding='latin1', usecols=colunas)
+df = pd.read_csv(CAMINHO, encoding='latin1', usecols=colunas)
 
 df = df.rename(columns={
     'Shipping Mode': 'modo',
@@ -18,66 +17,79 @@ df = df.rename(columns={
     'Late_delivery_risk': 'risco_atraso',
     'Days for shipping (real)': 'dias_real',
     'Days for shipment (scheduled)': 'dias_prog',
-    })
+})
 
-con = sql.connect(':memory:')
-df.to_sql('pedidos', con, index=False)
+# WHERE: remove pedidos cancelados
+#    SQL: WHERE status <> 'Shipping canceled'
+d = df[df['status'] != 'Shipping canceled'].copy()
 
-#PERGUNT: qual Shipping Mode tem a maior taxa de atraso?
-#    (WHERE tira cancelados; GROUP BY agrupa por modo; ORDER BY ordena)
-q3 = """
-SELECT  modo,
-        COUNT(*) AS total_pedidos,
-        SUM(CASE WHEN status = 'Late delivery' THEN 1 ELSE 0 END) AS atrasados,
-        ROUND(100.0 * SUM(CASE WHEN status = 'Late delivery' THEN 1 ELSE 0 END)
-              / COUNT(*), 1) AS taxa_atraso_pct
-FROM    pedidos
-WHERE   status <> 'Shipping canceled'
-GROUP BY modo
-ORDER BY taxa_atraso_pct DESC
-"""
+# Colunas calculadas (equivalem aos CASE WHEN / expressões do SELECT)
+d['atrasado'] = (d['status'] == 'Late delivery').astype(int)   # 1 = atrasado, 0 = não
+d['diferenca'] = d['dias_real'] - d['dias_prog']               # positivo = demorou mais que o prometido
+d['acima_prazo'] = (d['dias_real'] > d['dias_prog']).astype(int)
+
+# PERGUNTA: qual Shipping Mode tem a maior taxa de atraso?
+q3 = (
+    d.groupby('modo')
+    .agg(
+        total_pedidos=('atrasado', 'size'),   # COUNT(*)
+        atrasados=('atrasado', 'sum'),        # SUM(CASE WHEN ...)
+    )
+    .reset_index()
+)
+q3['taxa_atraso_pct'] = (q3['atrasados'] / q3['total_pedidos'] * 100).round(1)
+q3 = q3.sort_values('taxa_atraso_pct', ascending=False)   # ORDER BY ... DESC
+
 print('=== PERGUNTA 3: taxa de atraso por modo ===')
-print(pd.read_sql(q3, con).to_string(index=False))
+print(q3.to_string(index=False))
 
-#  PERGUNT: o prazo programado é realista?
+# PERGUNTA: o prazo programado é realista?
 #    diferença = dias_real - dias_prog  (positivo = demorou mais que o prometido)
-q4 = """
-SELECT  modo,
-        ROUND(AVG(dias_prog), 2)             AS prazo_prog_medio,
-        ROUND(AVG(dias_real), 2)             AS prazo_real_medio,
-        ROUND(AVG(dias_real - dias_prog), 2) AS diferenca_media,
-        MIN(dias_real - dias_prog)           AS menor_diferenca,
-        MAX(dias_real - dias_prog)           AS maior_diferenca,
-        ROUND(100.0 * SUM(CASE WHEN dias_real > dias_prog THEN 1 ELSE 0 END)
-              / COUNT(*), 1)                 AS pct_acima_do_prazo
-FROM    pedidos
-WHERE   status <> 'Shipping canceled'
-GROUP BY modo
-ORDER BY diferenca_media DESC
-"""
+q4 = (
+    d.groupby('modo')
+    .agg(
+        prazo_prog_medio=('dias_prog', 'mean'),     # AVG
+        prazo_real_medio=('dias_real', 'mean'),
+        diferenca_media=('diferenca', 'mean'),
+        menor_diferenca=('diferenca', 'min'),       # MIN
+        maior_diferenca=('diferenca', 'max'),       # MAX
+        pct_acima_do_prazo=('acima_prazo', 'mean'),
+    )
+    .reset_index()
+)
+q4['pct_acima_do_prazo'] = (q4['pct_acima_do_prazo'] * 100).round(1)
+q4[['prazo_prog_medio', 'prazo_real_medio', 'diferenca_media']] = (
+    q4[['prazo_prog_medio', 'prazo_real_medio', 'diferenca_media']].round(2)
+)
+q4 = q4.sort_values('diferenca_media', ascending=False)
+
 print('\n=== PERGUNTA 4: prazo programado x real ===')
-print(pd.read_sql(q4, con).to_string(index=False))
+print(q4.to_string(index=False))
+
+# "O real fica SEMPRE acima do programado?" -> menor_diferenca > 0 em algum modo?
 
 # JOIN: junta as duas análises pela coluna 'modo'
-q_join = f"""
-SELECT  a.modo, a.total_pedidos, a.taxa_atraso_pct,
-        b.prazo_prog_medio, b.prazo_real_medio, b.diferenca_media, b.menor_diferenca
-FROM    ({q3}) AS a
-JOIN    ({q4}) AS b ON a.modo = b.modo
-ORDER BY a.taxa_atraso_pct DESC
-"""
+resumo = (
+    q3[['modo', 'total_pedidos', 'taxa_atraso_pct']]
+    .merge(
+        q4[['modo', 'prazo_prog_medio', 'prazo_real_medio',
+            'diferenca_media', 'menor_diferenca']],
+        on='modo',
+        how='inner',
+    )
+    .sort_values('taxa_atraso_pct', ascending=False)
+)
+
 print('\n=== RESUMO (JOIN) ===')
-print(pd.read_sql(q_join, con).to_string(index=False))
- 
+print(resumo.to_string(index=False))
+
 # Distribuição: quantos pedidos por combinação prazo x real
-q_dist = """
-SELECT modo, dias_prog, dias_real, COUNT(*) AS pedidos
-FROM   pedidos
-WHERE  status <> 'Shipping canceled'
-GROUP BY modo, dias_prog, dias_real
-ORDER BY modo, dias_real
-"""
+dist = (
+    d.groupby(['modo', 'dias_prog', 'dias_real'])
+    .size()
+    .reset_index(name='pedidos')
+    .sort_values(['modo', 'dias_real'])
+)
+
 print('\n=== DISTRIBUIÇÃO prazo x real ===')
-print(pd.read_sql(q_dist, con).to_string(index=False))
- 
-con.close()
+print(dist.to_string(index=False))
