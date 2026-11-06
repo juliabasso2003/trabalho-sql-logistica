@@ -1,0 +1,7 @@
+services:
+  pipeline:
+    build: .
+    image: trabalho-sql-logistica
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
