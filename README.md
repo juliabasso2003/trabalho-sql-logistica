@@ -104,13 +104,21 @@ O que cada parte faz:
 
 #### Como saber se deu certo
 
-O terminal mostra uma mensagem parecida com:
+O terminal mostra uma saída parecida com esta (a tabela da região aparece inteira, aqui está resumida):
 
 ```
 180519 linhas salvas em: /app/output
+
+=== PERGUNTA: taxa de atraso por região ===
+   Order Region  total_pedidos  atrasados  taxa_atraso_pct
+ Central Africa           1616        972             60.1
+ ...
+         Canada            907        468             51.6
+Média geral de atraso: 57.3%
+Tabela e gráfico da região salvos em: /app/output
 ```
 
-E o arquivo `dados_filtrados.csv` aparece na pasta `output/`.
+E aparecem na pasta `output/` os arquivos `dados_filtrados.csv`, `atraso_por_regiao.csv` e `atraso_por_regiao.png`.
 
 ---
 
@@ -122,16 +130,16 @@ A imagem também foi publicada no Docker Hub, para rodar em outra máquina sem p
 
 ```
 docker login
-docker tag trabalho-sql-logistica marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.0
-docker push marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.0
+docker tag trabalho-sql-logistica marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
+docker push marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
 ```
 
-A imagem está publicada no Docker Hub como `marcoantoniodecarlirodegheri/trabalho-sql-logistica` (repositório público). Para publicar em outra conta, troque o usuário nos comandos acima.
+A imagem está publicada no Docker Hub como `marcoantoniodecarlirodegheri/trabalho-sql-logistica` (repositório público). A versão mais nova é a `1.1`, que já tem a consulta de atraso por região. Quando o pipeline mudar, é só publicar com um número novo (`1.2`, `1.3`...). Para publicar em outra conta, troque o usuário nos comandos acima.
 
 Se a imagem for rodar em um Mac com chip M1/M2/M3, ela precisa ser publicada para as duas arquiteturas. Nesse caso, use este comando no lugar do `tag` e do `push` (ele já faz o build e o envio juntos):
 
 ```
-docker buildx build --platform linux/amd64,linux/arm64 -t marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.0 --push .
+docker buildx build --platform linux/amd64,linux/arm64 -t marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1 --push .
 ```
 
 ### Para rodar (outro grupo)
@@ -141,13 +149,13 @@ docker buildx build --platform linux/amd64,linux/arm64 -t marcoantoniodecarlirod
 3. Dentro dessa pasta geral, rodar (PowerShell):
 
 ```
-docker pull marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.0
-docker run --rm -v "${PWD}\data:/app/data" -v "${PWD}\output:/app/output" marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.0
+docker pull marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
+docker run --rm -v "${PWD}\data:/app/data" -v "${PWD}\output:/app/output" marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
 ```
 
 No Mac ou Linux, troque `${PWD}\data` por `$(pwd)/data` (e o mesmo para `output`).
 
-O resultado aparece na pasta `output/` dessa máquina.
+O resultado aparece na pasta `output/` dessa máquina (os mesmos arquivos da seção [Como saber se deu certo](#como-saber-se-deu-certo)).
 
 ---
 
