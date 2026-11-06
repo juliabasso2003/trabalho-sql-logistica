@@ -2,7 +2,7 @@
 
 Trabalho de SQL sobre atrasos na logística (Smart Logistics).
 
-O objetivo é descobrir onde os materiais atrasam. O pipeline (`src/pipeline.py`) lê a base `DataCoSupplyChainDataset.csv`, separa só as colunas para análise e salva o resultado em `output/dados_filtrados.csv`.
+O objetivo é descobrir onde os materiais atrasam. O pipeline (`src/pipeline.py`) lê a base `DataCoSupplyChainDataset.csv`, separa só as colunas para análise e salva o resultado em `output/dados_filtrados.csv`. Depois disso ele responde as perguntas de negócio do grupo (explicadas mais abaixo, em [Perguntas de negócio](#perguntas-de-negócio)), gerando tabelas e gráficos na pasta `output/`.
 
 O projeto roda dentro de um container Docker, então não é preciso ter Python nem as bibliotecas instaladas na máquina. Os dados não ficam dentro da imagem: eles entram por volume na hora de rodar.
 
@@ -183,3 +183,23 @@ O script encontra as pastas `data/` e `output/` a partir de onde ele mesmo está
 **.dockerignore**
 
 Evita que a venv, o `.git`, os CSVs e a pasta `output/` sejam enviados para o build. Assim a imagem fica menor, o build fica mais rápido e os dados realmente só entram por volume.
+
+---
+
+## Perguntas de negócio
+
+### O atraso depende da região para onde o pedido vai?
+
+**Por que essa pergunta:** o tema do trabalho é descobrir onde os materiais atrasam. Antes de olhar para cidades ou produtos, a gente quis ver se existe alguma região do mundo que concentra os atrasos, porque se existisse, o problema poderia estar no destino (distância, transporte local, etc).
+
+**Como foi feito:**
+- Tiramos os pedidos com status `Shipping canceled`, porque eles nem chegaram a ser enviados, então não faz sentido dizer se atrasaram ou não.
+- Criamos a coluna `atrasado`, que vale 1 quando o `Delivery Status` é `Late delivery` e 0 nos outros casos.
+- Agrupamos por `Order Region` e calculamos o total de pedidos, quantos atrasaram e a taxa de atraso em %.
+- Calculamos também a média geral de atraso de todos os pedidos, para comparar cada região com ela.
+
+**Resultado:** a média geral de atraso é de 57,3%, e todas as 23 regiões ficam perto disso, entre 51,6% (Canada) e 60,1% (Central Africa). Ou seja, todas as regiões atrasam mais da metade dos pedidos e nenhuma se destaca muito das outras. A conclusão é que o destino não explica o atraso: ele está espalhado igual pelo mundo todo, então a causa tem que estar em outra coisa (como o modo de envio).
+
+**Arquivos gerados:**
+- `output/atraso_por_regiao.csv`: tabela com total de pedidos, atrasados e taxa de atraso por região
+- `output/atraso_por_regiao.png`: gráfico de barras com a taxa de cada região e uma linha marcando a média geral
