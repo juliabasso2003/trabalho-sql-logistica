@@ -1,6 +1,11 @@
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import pandas as pd
 
-CAMINHO = r'C:\Users\Júlia Agazzi\trabalho-sql-logistica\data\DataCoSupplyChainDataset.csv'
+CAMINHO = r'C:\Users\lucas\OneDrive\Área de Trabalho\trabalho-sql-logistica\data\DataCoSupplyChainDataset.csv'
+PASTA_GRAFICOS = Path(__file__).resolve().parent.parent / 'output'
+PASTA_GRAFICOS.mkdir(parents=True, exist_ok=True)
 
 colunas = [
     'Shipping Mode',
@@ -8,6 +13,7 @@ colunas = [
     'Late_delivery_risk',
     'Days for shipping (real)',
     'Days for shipment (scheduled)',
+    'Customer City',
 ]
 df = pd.read_csv(CAMINHO, encoding='latin1', usecols=colunas)
 
@@ -17,6 +23,7 @@ df = df.rename(columns={
     'Late_delivery_risk': 'risco_atraso',
     'Days for shipping (real)': 'dias_real',
     'Days for shipment (scheduled)': 'dias_prog',
+    'Customer City': 'city',
 })
 
 # WHERE: remove pedidos cancelados
@@ -92,6 +99,58 @@ dist = (
 )
 
 print('\n=== DISTRIBUIÇÃO prazo x real ===')
-print(pd.read_sql(q_dist, con).to_string(index=False))
- 
-con.close()
+print(dist.to_string(index=False))
+
+# PERGUNTA: quais são os 10 países com maior tempo médio de entrega?
+q5 = (
+    d.groupby('city')
+    .agg(
+        tempo_medio_entrega_dias=('dias_real', 'mean'),
+        total_pedidos=('dias_real', 'size'),
+    )
+    .reset_index()
+    .sort_values('tempo_medio_entrega_dias', ascending=False)
+    .head(10)
+)
+q5['tempo_medio_entrega_dias'] = q5['tempo_medio_entrega_dias'].round(2)
+
+print('\n=== PERGUNTA 5: 10 países com maior tempo médio de entrega ===')
+print(q5.to_string(index=False))
+
+# Salva os gráficos gerados na pasta outputs
+plt.figure(figsize=(8, 5))
+plt.bar(q3['modo'], q3['taxa_atraso_pct'], color='steelblue')
+plt.title('Taxa de atraso por modo de envio')
+plt.xlabel('Modo de envio')
+plt.ylabel('Taxa de atraso (%)')
+plt.xticks(rotation=20, ha='right')
+plt.tight_layout()
+plt.savefig(PASTA_GRAFICOS / 'taxa_atraso_por_modo.png', dpi=150)
+plt.close()
+
+plt.figure(figsize=(8, 5))
+plt.plot(q4['modo'], q4['prazo_prog_medio'], marker='o', label='Prazo programado')
+plt.plot(q4['modo'], q4['prazo_real_medio'], marker='o', label='Prazo real')
+plt.title('Prazo médio programado x real por modo de envio')
+plt.xlabel('Modo de envio')
+plt.ylabel('Dias')
+plt.xticks(rotation=20, ha='right')
+plt.legend()
+plt.tight_layout()
+plt.savefig(PASTA_GRAFICOS / 'prazo_programado_vs_real.png', dpi=150)
+plt.close()
+
+plt.figure(figsize=(9, 6))
+plt.barh(
+    q5['city'].iloc[::-1],
+    q5['tempo_medio_entrega_dias'].iloc[::-1],
+    color='darkorange',
+)
+plt.title('10 cidades com maior tempo médio de entrega')
+plt.xlabel('Tempo médio de entrega (dias)')
+plt.ylabel('city')
+plt.tight_layout()
+plt.savefig(PASTA_GRAFICOS / 'top_10_cidades_tempo_medio_entrega.png', dpi=150)
+plt.close()
+
+print(f'\nGráficos salvos em: {PASTA_GRAFICOS}')
