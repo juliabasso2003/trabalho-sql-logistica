@@ -2,5 +2,4 @@ venv/
 .venv/
 .env
 *.db
-data/
 __pycache__/
