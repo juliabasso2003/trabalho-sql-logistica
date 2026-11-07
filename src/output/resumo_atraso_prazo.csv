@@ -1,5 +1,0 @@
-modo,total_pedidos,taxa_atraso_pct,prazo_prog_medio,prazo_real_medio,diferenca_media,menor_diferenca
-First Class,26513,100.0,1.0,2.0,1.0,1
-Second Class,33806,79.8,2.0,3.99,1.99,0
-Same Day,9293,47.9,0.0,0.48,0.48,0
-Standard Class,103153,39.8,4.0,3.99,-0.01,-2
