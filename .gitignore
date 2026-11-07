@@ -1,2 +1,7 @@
-venv
-.venv
+venv/
+.venv/
+.env
+*.db
+data/
+output/
+__pycache__/
