@@ -1,0 +1,5 @@
+modo,prazo_prog_medio,prazo_real_medio,diferenca_media,menor_diferenca,maior_diferenca,pct_acima_do_prazo
+Second Class,2.0,3.99,1.99,0,4,79.8
+First Class,1.0,2.0,1.0,1,1,100.0
+Same Day,0.0,0.48,0.48,0,1,47.9
+Standard Class,4.0,3.99,-0.01,-2,2,39.8
