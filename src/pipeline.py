@@ -2,12 +2,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 
-# Pasta raiz do projeto (um nível acima de src/)
-BASE_DIR = Path(__file__).resolve().parent.parent
-
 # Caminho para o arquivo de dados e pasta de saída
-CAMINHO = BASE_DIR / 'data' / 'DataCoSupplyChainDataset.csv'
-PASTA_SAIDA = BASE_DIR / 'output'
+CAMINHO = Path('../data/DataCoSupplyChainDataset.csv')
+PASTA_SAIDA = Path('output')
 
 # Cria a pasta de saída, caso não exista
 PASTA_SAIDA.mkdir(parents=True, exist_ok=True)

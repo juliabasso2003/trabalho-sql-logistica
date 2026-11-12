@@ -1,0 +1,18 @@
+{
+  "pedidos_treino": 138213,
+  "pedidos_teste": 34552,
+  "taxa_atraso_teste_pct": 57.3,
+  "acuracia": 0.694,
+  "precisao": 0.87,
+  "recall": 0.548,
+  "f1": 0.672,
+  "verdadeiros_positivos": 10847,
+  "falsos_positivos": 1619,
+  "falsos_negativos": 8946,
+  "verdadeiros_negativos": 13140,
+  "referencia_sempre_atrasa": {
+    "acuracia": 0.573,
+    "precisao": 0.573,
+    "recall": 1.0
+  }
+}
