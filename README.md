@@ -1,213 +1,219 @@
-# Trabalho-sql-logistica
+# Trabalho SQL Logística — Smart Talent John Deere
 
-Trabalho de SQL sobre atrasos na logística (Smart Logistics).
+Projeto do tema 4 (Logística/Materiais: rastreamento, estoque e atrasos) do
+programa Smart Talent, no Instituto Caldeira.
 
-O objetivo é descobrir onde os materiais atrasam. O pipeline (`src/pipeline.py`) lê a base `DataCoSupplyChainDataset.csv`, separa só as colunas para análise e salva o resultado em `output/dados_filtrados.csv`. Depois disso ele responde as perguntas de negócio do grupo (explicadas mais abaixo, em [Perguntas de negócio](#perguntas-de-negócio)), gerando tabelas e gráficos na pasta `output/`.
-
-O projeto roda dentro de um container Docker, então não é preciso ter Python nem as bibliotecas instaladas na máquina. Os dados não ficam dentro da imagem: eles entram por volume na hora de rodar.
-
----
-
-## Estrutura do projeto
-
-```
-trabalho-sql-logistica/
-├── data/                  # coloque o CSV aqui (não vai para a imagem)
-├── output/                # onde o resultado é salvo
-├── src/
-│   └── pipeline.py        # script do pipeline
-├── requirements.txt       # bibliotecas Python usadas
-├── Dockerfile             # receita da imagem
-├── .dockerignore          # o que NÃO vai para a imagem
-└── compose.yaml           # atalho para build + run
-```
+A pergunta é onde e por que os materiais atrasam. A base é o
+[DataCo Smart Supply Chain](https://www.kaggle.com/datasets/shashwatwork/dataco-smart-supply-chain-for-big-data-analysis),
+com 180.519 pedidos e 53 colunas. A entrega é um dashboard em Power BI que lê de
+uma camada de dados montada no Databricks.
 
 ---
 
-## Como baixar o projeto
+## Por onde o dado passa
 
 ```
-git clone https://github.com/juliabasso2003/trabalho-sql-logistica.git
-cd trabalho-sql-logistica
+CSV no repositório
+        │
+        ├──► Databricks ─► tabela (Delta) ─► vw_enviados ─► 5 tabelas bi_* ─► Power BI
+        │
+        └──► pipeline.py (pandas + Docker) ─► output/
 ```
+
+São dois caminhos separados. O de cima é a solução. O de baixo é a análise que
+fizemos antes de migrar pro Databricks, e continua aqui porque mostra como a
+gente chegou nas perguntas.
 
 ---
 
-## Antes de rodar
+## Os arquivos
 
-1. Ter o Docker Desktop instalado e aberto. Para testar: `docker --version`.
-2. Baixar o dataset no Kaggle: [DataCo Smart Supply Chain](https://www.kaggle.com/datasets/shashwatwork/dataco-smart-supply-chain-for-big-data-analysis). Dele, só é usado o arquivo `DataCoSupplyChainDataset.csv`.
-3. Criar a pasta `data/` na raiz do projeto e colocar o `DataCoSupplyChainDataset.csv` dentro dela. O nome tem que ser exatamente esse, com as mesmas maiúsculas.
-
-```
-mkdir data
-```
-
-A pasta `data/` não vem no repositório porque os dados são grandes e ficam fora do Git (estão no `.gitignore`). A pasta `output/` não precisa ser criada: ela é criada sozinha quando o pipeline roda.
+| Arquivo | O que faz |
+|---|---|
+| `src/camada_bi.ipynb` | Carrega o CSV como tabela Delta e cria a view e as 5 tabelas que o Power BI consome. Roda sozinho. |
+| `src/ETL CSV.ipynb` | Consultas de exploração da base, feitas antes de fechar a camada. |
+| `src/modelo_ml.ipynb` | Modelo baseline de previsão de atraso. Gera `src/output/metricas.json`. |
+| `src/pipeline.py` | Pipeline em pandas. Lê o CSV e gera tabelas e gráficos em `output/`. |
+| `data/` | O CSV. |
+| `output/` | Saídas do `pipeline.py`. |
 
 ---
-## Rodando com o código
 
-Para quem baixou o projeto do GitHub. A imagem é montada na própria máquina a partir do Dockerfile.
+## A camada do Power BI
 
-### Forma 1: com Docker Compose (mais simples)
+As consultas do `ETL CSV` criam `enviados` como TEMP VIEW. TEMP quer dizer que
+ela existe só dentro da sessão que criou, e o Power BI abre a própria sessão
+contra o warehouse — então ele não acha a view e nenhuma consulta roda a partir
+do dashboard.
 
-Na pasta do projeto, rode:
+O `camada_bi.ipynb` resolve isso salvando os mesmos resultados de verdade:
+
+| Objeto | Linhas | Para quê |
+|---|---|---|
+| `vw_enviados` | — | Base das outras. Tira os cancelados e calcula a flag de atraso e a data do pedido. |
+| `bi_geral` | 1 | Os números do topo do dashboard. |
+| `bi_modo_envio` | 4 | Prazo prometido contra prazo real, por modo de envio. |
+| `bi_quebras` | 193 | Dez quebras numa tabela só, no formato `dimensao / valor / taxa`: região, estado, cidade, mercado, categoria, segmento, tipo de pagamento, status, qtd de itens e dia da semana. No BI isso vira um gráfico com filtro em vez de dez gráficos quase iguais. |
+| `bi_serie_mensal` | 37 | Atraso mês a mês. |
+| `bi_faixa_valor` | 4 | Atraso por faixa de valor do pedido. |
+
+São 239 linhas no total, contra 172.765 da tabela bruta.
+
+### Rodando
+
+1. No Databricks, clone o repositório como Git folder e escolha a branch.
+2. Rode o `camada_bi.ipynb` de cima para baixo. A primeira célula lê o CSV e
+   grava a `tabela`, e imprime a contagem: tem que dar 180519. As seis seguintes
+   criam a view e as cinco tabelas.
+3. Confira com `SELECT * FROM bi_geral` — tem que dar 172.765 pedidos, 98.977
+   atrasados e 57,3% de taxa de atraso.
+
+### Conectando o Power BI
+
+Obter dados → Databricks → informe o server hostname e o HTTP path do SQL
+warehouse → autenticação por Personal Access Token. Importe as 5 tabelas `bi_*`,
+não a tabela bruta.
+
+---
+
+## O que os dados mostram
+
+A taxa geral de atraso é 57,3%: 98.977 de 172.765 pedidos enviados.
+
+Medimos quanto cada dimensão separa o atraso, contando só grupos com 300 pedidos
+ou mais:
+
+| Dimensão | Menor | Maior | Amplitude |
+|---|---|---|---|
+| Modo de envio | 39,8% | 100,0% | 60,2 pts |
+| Cidade do cliente | 49,6% | 66,8% | 17,2 pts |
+| Estado do cliente | 52,6% | 63,0% | 10,4 pts |
+| Categoria | 52,7% | 62,6% | 9,9 pts |
+| Região | 51,6% | 60,1% | 8,5 pts |
+| Status do pedido | 55,6% | 57,9% | 2,3 pts |
+| Dia da semana | 56,6% | 57,8% | 1,2 pts |
+| Mercado | 56,8% | 57,7% | 0,9 pt |
+| Tipo de pagamento | 56,6% | 57,5% | 0,9 pt |
+| Qtd. de itens | 56,9% | 57,6% | 0,7 pt |
+| Segmento | 57,1% | 57,6% | 0,5 pt |
+
+Mês a mês fica entre 56,7% e 58,0%, e por faixa de valor entre 57,0% e 57,7%.
+Nem época do ano nem valor do pedido explicam o atraso.
+
+Só o modo de envio separa, e separa porque o prazo prometido é fixo por modo:
+
+| Modo | Prometido | Real médio | Taxa de atraso | Pedidos |
+|---|---|---|---|---|
+| First Class | 1 dia | 2,00 dias | 100,0% | 26.513 |
+| Second Class | 2 dias | 3,99 dias | 79,8% | 33.806 |
+| Same Day | 0 dias | 0,48 dia | 47,9% | 9.293 |
+| Standard Class | 4 dias | 3,99 dias | 39,8% | 103.153 |
+
+No First Class a diferença mínima é igual à máxima, 1 dia, nos 26.513 pedidos:
+nenhum chegou no prazo, e sempre pelo mesmo um dia. Já o Standard Class entrega
+em 3,99 dias contra 4 prometidos, ou seja, cumpre o prazo na média.
+
+Com isso, o atraso não parece ser problema de operação. A entrega leva uns 2
+dias e varia pouco. O que varia é o prazo que foi prometido: quem promete 1 dia
+erra sempre, quem promete 4 acerta.
+
+---
+
+## Coisas da base que vale saber
+
+`Late_delivery_risk` não é um risco previsto, é o resultado. Nos 172.765 pedidos
+enviados, ela vale 1 em todos os 98.977 `Late delivery` e em nenhum pedido
+entregue no prazo. Por isso não entra na camada do BI, e o `modelo_ml.ipynb`
+deixa ela de fora: usar como variável seria dar a resposta pro modelo.
+
+`Delivery_Status = 'Late delivery'` dá no mesmo que `dias_real > dias_prog`, nos
+98.977 casos. As duas formas de definir atraso são a mesma coisa.
+
+Agrupar por mês precisa do ano junto. A base vai de janeiro de 2015 a janeiro de
+2018, então agrupar só por `MONTH()` soma quatro janeiros contra três dos outros
+meses. A `bi_serie_mensal` usa ano e mês.
+
+O `NTILE` da faixa de valor precisa de desempate. `Sales` tem 180.519 linhas e só
+193 valores distintos, com um empate de 22.372 linhas no mesmo valor. Sem
+desempate o corte do quartil cai no meio de um bloco de valores iguais e cada
+execução devolve número diferente, então a consulta usa
+`ORDER BY Sales, Order_Item_Id`.
+
+---
+
+## O modelo de ML
+
+O `modelo_ml.ipynb` treina um Random Forest pra prever se um pedido vai atrasar,
+usando só o que já se sabe no momento do pedido: modo de envio, região, mercado,
+categoria, tipo de pagamento, segmento, prazo programado, quantidade, mês e dia
+da semana. Treino e teste são separados por período, não sorteados: os 80% mais
+antigos treinam e os 20% mais recentes testam.
+
+O resultado fica em `src/output/metricas.json`: acurácia 0,694 contra 0,573 de um
+baseline que chuta que todo pedido atrasa.
+
+---
+
+## Pipeline local em Docker
+
+Essa parte é da análise que veio antes do Databricks e não alimenta o dashboard.
+
+O `src/pipeline.py` lê o CSV com pandas, responde as perguntas de negócio da
+semana 2 e grava tabelas em `.csv` e gráficos em `.png` na pasta `output/`.
+
+### Com Docker
 
 ```
 docker compose up --build
 ```
 
-O `--build` monta a imagem antes de rodar. Ele é necessário na primeira vez e sempre que o `pipeline.py` for alterado. Nas outras vezes basta:
+O `compose.yaml` já monta `data/` e `output/` como volumes. Para remover o
+container depois, `docker compose down`.
+
+### Sem Docker
 
 ```
-docker compose up
+python -m venv venv
+.\venv\Scripts\Activate.ps1      # PowerShell
+pip install -r requirements.txt
+python src/pipeline.py
 ```
 
-O `compose.yaml` já tem configurados os volumes de `data/` e `output/`, então não precisa passar caminho nenhum. 
+### Como saber se deu certo
 
-Para remover o container depois que ele termina:
-
-```
-docker compose down
-```
-
----
-
-### Forma 2: com `docker build` e `docker run`
-
-#### Build (criar a imagem)
+O terminal imprime quatro consultas, começando por:
 
 ```
-docker build -t trabalho-sql-logistica .
+=== PERGUNTA 3: taxa de atraso por modo ===
+          modo  total_pedidos  atrasados  taxa_atraso_pct
+   First Class          26513      26513            100.0
+  Second Class          33806      26987             79.8
+      Same Day           9293       4454             47.9
+Standard Class         103153      41023             39.8
 ```
 
-- `-t trabalho-sql-logistica`: nome da imagem.
-- `.`: usa a pasta atual (onde está o Dockerfile). O ponto é obrigatório.
+E a pasta `output/` fica com `taxa_atraso_por_modo.csv`,
+`prazo_programado_x_real.csv`, `resumo_atraso_prazo.csv`,
+`distribuicao_prazo_real.csv`, `tempo_medio_entrega_por_cidade_top10.csv`,
+`atraso_por_regiao.csv` e os quatro `.png` correspondentes.
 
-#### Run (rodar o pipeline)
+### Imagem no Docker Hub
 
-PowerShell:
-
-```
-docker run --rm -v "${PWD}\data:/app/data" -v "${PWD}\output:/app/output" trabalho-sql-logistica
-```
-
-No Mac ou Linux, troque `${PWD}\data` por `$(pwd)/data` (e o mesmo para `output`).
-
-O que cada parte faz:
-
-- `-v "...\data:/app/data"`: o volume de entrada. A pasta `data/` do computador aparece dentro do container como `/app/data`, e é por ela que o CSV entra.
-- `-v "...\output:/app/output"`: o volume de saída. O arquivo que o script gera em `/app/output` aparece na pasta `output/` do computador.
-- `--rm`: apaga o container quando ele termina, para não ficar acumulando.
-- As aspas são necessárias quando o caminho da pasta tem espaço.
-
-#### Como saber se deu certo
-
-O terminal mostra uma saída parecida com esta (a tabela da região aparece inteira, aqui está resumida):
-
-```
-180519 linhas salvas em: /app/output
-
-=== PERGUNTA: taxa de atraso por região ===
-   Order Region  total_pedidos  atrasados  taxa_atraso_pct
- Central Africa           1616        972             60.1
- ...
-         Canada            907        468             51.6
-Média geral de atraso: 57.3%
-Tabela e gráfico da região salvos em: /app/output
-```
-
-E aparecem na pasta `output/` os arquivos `dados_filtrados.csv`, `atraso_por_regiao.csv` e `atraso_por_regiao.png`.
-
----
-
-## Rodando sem o código (imagem do Docker Hub)
-
-A imagem também foi publicada no Docker Hub, para rodar em outra máquina sem precisar do código.
-
-### Para publicar a imagem (só quem mantém a imagem)
-
-```
-docker login
-docker tag trabalho-sql-logistica marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
-docker push marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
-```
-
-A imagem está publicada no Docker Hub como `marcoantoniodecarlirodegheri/trabalho-sql-logistica` (repositório público). A versão mais nova é a `1.1`, que já tem a consulta de atraso por região. Quando o pipeline mudar, é só publicar com um número novo (`1.2`, `1.3`...). Para publicar em outra conta, troque o usuário nos comandos acima.
-
-Se a imagem for rodar em um Mac com chip M1/M2/M3, ela precisa ser publicada para as duas arquiteturas. Nesse caso, use este comando no lugar do `tag` e do `push` (ele já faz o build e o envio juntos):
-
-```
-docker buildx build --platform linux/amd64,linux/arm64 -t marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1 --push .
-```
-
-### Para rodar (outro grupo)
-
-1. Criar uma pasta com duas subpastas, `data/` e `output/`.
-2. Colocar o `DataCoSupplyChainDataset.csv` dentro de `data/`.
-3. Dentro dessa pasta geral, rodar (PowerShell):
+A imagem está publicada como
+`marcoantoniodecarlirodegheri/trabalho-sql-logistica`. Para rodar em outra
+máquina sem o código, crie uma pasta com `data/` e `output/` dentro, ponha o CSV
+em `data/` e rode:
 
 ```
 docker pull marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
 docker run --rm -v "${PWD}\data:/app/data" -v "${PWD}\output:/app/output" marcoantoniodecarlirodegheri/trabalho-sql-logistica:1.1
 ```
 
-No Mac ou Linux, troque `${PWD}\data` por `$(pwd)/data` (e o mesmo para `output`).
-
-O resultado aparece na pasta `output/` dessa máquina (os mesmos arquivos da seção [Como saber se deu certo](#como-saber-se-deu-certo)).
+No Mac ou Linux, troque `${PWD}\data` por `$(pwd)/data`.
 
 ---
 
-## Rodando sem Docker (opcional)
+## Equipe
 
-Para testar o script direto no computador:
-
-```
-python -m venv venv
-.\venv\Scripts\Activate.ps1      # PowerShell
-# source venv/Scripts/activate   # bash no Windows
-pip install -r requirements.txt
-python src/pipeline.py
-```
-
-O script encontra as pastas `data/` e `output/` a partir de onde ele mesmo está (`Path(__file__)`). Por isso o mesmo código funciona no computador e dentro do container sem nenhuma alteração.
-
----
-
-## Sobre os arquivos do Docker
-
-**Dockerfile**
-
-| Linha | O que faz |
-|---|---|
-| `FROM python:3.12-slim` | Usa uma imagem Linux enxuta já com Python 3.12 (mesma versão usada no desenvolvimento) |
-| `WORKDIR /app` | Define `/app` como pasta de trabalho dentro do container |
-| `COPY requirements.txt .` | Copia a lista de bibliotecas |
-| `RUN pip install --no-cache-dir -r requirements.txt` | Instala as bibliotecas (vem antes do código para aproveitar o cache do Docker) |
-| `COPY src/ ./src/` | Copia só o código. Os dados não são copiados |
-| `CMD ["python", "src/pipeline.py"]` | Comando que roda quando o container inicia |
-
-**.dockerignore**
-
-Evita que a venv, o `.git`, os CSVs e a pasta `output/` sejam enviados para o build. Assim a imagem fica menor, o build fica mais rápido e os dados realmente só entram por volume.
-
----
-
-## Perguntas de negócio
-
-### O atraso depende da região para onde o pedido vai?
-
-**Por que essa pergunta:** o tema do trabalho é descobrir onde os materiais atrasam. Antes de olhar para cidades ou produtos, a gente quis ver se existe alguma região do mundo que concentra os atrasos, porque se existisse, o problema poderia estar no destino (distância, transporte local, etc).
-
-**Como foi feito:**
-- Tiramos os pedidos com status `Shipping canceled`, porque eles nem chegaram a ser enviados, então não faz sentido dizer se atrasaram ou não.
-- Criamos a coluna `atrasado`, que vale 1 quando o `Delivery Status` é `Late delivery` e 0 nos outros casos.
-- Agrupamos por `Order Region` e calculamos o total de pedidos, quantos atrasaram e a taxa de atraso em %.
-- Calculamos também a média geral de atraso de todos os pedidos, para comparar cada região com ela.
-
-**Resultado:** a média geral de atraso é de 57,3%, e todas as 23 regiões ficam perto disso, entre 51,6% (Canada) e 60,1% (Central Africa). Ou seja, todas as regiões atrasam mais da metade dos pedidos e nenhuma se destaca muito das outras. A conclusão é que o destino não explica o atraso: ele está espalhado igual pelo mundo todo, então a causa tem que estar em outra coisa (como o modo de envio).
-
-**Arquivos gerados:**
-- `output/atraso_por_regiao.csv`: tabela com total de pedidos, atrasados e taxa de atraso por região
-- `output/atraso_por_regiao.png`: gráfico de barras com a taxa de cada região e uma linha marcando a média geral
+Grupo 2 — Júlia Basso Agazzi, Lucas Santos, Marco Antônio De Carli Rodegheri,
+Nicoly Carvalho, Otávio Fogaça da Rosa.
