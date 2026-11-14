@@ -2,9 +2,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 
-# Caminho para o arquivo de dados e pasta de saída
-CAMINHO = Path('../data/DataCoSupplyChainDataset.csv')
-PASTA_SAIDA = Path('output')
+# Caminho para o arquivo de dados e pasta de saída.
+# Montado a partir da pasta do próprio script, para funcionar igual rodando
+# da raiz do projeto, de dentro de src/ ou dentro do container.
+RAIZ = Path(__file__).resolve().parent.parent
+CAMINHO = RAIZ / 'data' / 'DataCoSupplyChainDataset.csv'
+PASTA_SAIDA = RAIZ / 'output'
 
 # Cria a pasta de saída, caso não exista
 PASTA_SAIDA.mkdir(parents=True, exist_ok=True)
